@@ -1,0 +1,15 @@
+pipeline {
+  agent { label 'built-in' }
+
+  parameters {
+    string(name: 'IMAGE', defaultValue: 'localhost:5050/deepmodel:latest', description: '完整镜像地址')
+  }
+
+  stages {
+    stage('Deploy') {
+      steps {
+        sh "chmod +x deepModel/scripts/deploy.sh && IMAGE=${params.IMAGE} deepModel/scripts/deploy.sh"
+      }
+    }
+  }
+}

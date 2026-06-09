@@ -5,13 +5,17 @@ def APP_REPO = 'https://github.com/ypfect/deepModel.git'
 pipeline {
   agent none
 
+  parameters {
+    string(name: 'BRANCH', defaultValue: 'main', description: '业务代码分支')
+  }
+
   stages {
     stage('Log') {
       agent { label 'built-in' }
       steps {
         echo "=== deepModel CI/CD ==="
         echo "Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-        echo "Branch: ${env.BRANCH_NAME ?: 'main'}"
+        echo "Branch: ${params.BRANCH}"
         echo "Source: ${APP_REPO}"
         echo "Registry: ${REGISTRY}/${IMAGE_NAME}"
         echo "Build URL: ${env.BUILD_URL}"
@@ -31,7 +35,7 @@ pipeline {
       stages {
         stage('Checkout') {
           steps {
-            git url: APP_REPO, branch: 'main'
+            git url: APP_REPO, branch: params.BRANCH
           }
         }
         stage('Package') {

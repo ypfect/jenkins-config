@@ -6,18 +6,19 @@ set -euo pipefail
 RESULT="${WORKSPACE:?}/result"
 DB_DIR="${RESULT}/db"
 PGIMAGE="postgres:16"
-PGHOST="host.docker.internal"
+PGNET="${PG_NETWORK:-practice_default}"
+PGHOST="${PG_HOST:-postgres}"
 PGPORT="5432"
 PGUSER="postgres"
 PGPASS="123"
 
 PSQL() {
-  docker run -i --rm --add-host=host.docker.internal:host-gateway \
+  docker run -i --rm --network "${PGNET}" \
     -e PGPASSWORD="${PGPASS}" "${PGIMAGE}" \
     psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -v ON_ERROR_STOP=1 "$@"
 }
 PGDUMP() {
-  docker run -i --rm --add-host=host.docker.internal:host-gateway \
+  docker run -i --rm --network "${PGNET}" \
     -e PGPASSWORD="${PGPASS}" "${PGIMAGE}" \
     pg_dump -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" "$@"
 }

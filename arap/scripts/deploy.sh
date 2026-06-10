@@ -6,14 +6,15 @@ CONTAINER_NAME="arap-app"
 HOST_PORT="8801"
 CONTAINER_PORT="8801"
 PGIMAGE="postgres:16"
-PGHOST="host.docker.internal"
+PGNET="${PG_NETWORK:-practice_default}"
+PGHOST="${PG_HOST:-postgres}"
 PGPORT="5432"
 PGUSER="postgres"
 PGPASS="123"
 TARGET_DB="arap_target"
 
 PSQL() {
-  docker run -i --rm --add-host=host.docker.internal:host-gateway \
+  docker run -i --rm --network "${PGNET}" \
     -e PGPASSWORD="${PGPASS}" "${PGIMAGE}" \
     psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -v ON_ERROR_STOP=1 "$@"
 }
@@ -46,8 +47,9 @@ docker rm "${CONTAINER_NAME}" 2>/dev/null || true
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --restart unless-stopped \
-  --add-host=host.docker.internal:host-gateway \
+  --network "${PGNET}" \
   -p "${HOST_PORT}:${CONTAINER_PORT}" \
+  -e PGHOST="${PGHOST}" \
   -e PGDB="${TARGET_DB}" \
   "${IMAGE}"
 

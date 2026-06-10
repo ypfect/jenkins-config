@@ -1,12 +1,12 @@
 # jenkins-config — 流水线定义仓库
 
-每个目录 = 一个项目的全部 Jenkins 配置。
+对标公司 `ops/ci2k8s`：每个目录 = 一个项目的 Jenkins 流水线配置。
 
-## 仓库定位
+## 三层定位
 
 ```
-practice/          = 平台层（通用 Jenkins + Registry 环境）
-config/<project>/  = 编排层（项目专属 CI/CD 配置）  ← 本仓库
+practice/          = 平台层（Jenkins Master + Registry）
+config/<project>/  = 编排层（Jenkinsfile + 脚本）      ← 本仓库
 <project repo>     = 业务代码
 ```
 
@@ -16,52 +16,54 @@ config/<project>/  = 编排层（项目专属 CI/CD 配置）  ← 本仓库
 config/
 ├── README.md
 └── deepModel/
-    ├── jobs/                        # Job XML（供 init.sh 注册到 Jenkins）
-    │   ├── deepModel-ci.xml         #   CI：inline pipeline，git clone → 编译 → 归档
-    │   └── deepModel-cd.xml         #   CD：inline pipeline，取 jar → 打镜像 → 部署
-    ├── Jenkinsfile                  # CI（SCM Pipeline 模式，更完整的版本）
-    ├── Jenkinsfile.deploy           # CD（SCM Pipeline 模式，调用 scripts/deploy.sh）
+    ├── jobs/                        # Job 壳子（一次性注册到 Jenkins）
+    │   ├── deepModel-ci.xml         #   CI Job：Pipeline from SCM → Jenkinsfile
+    │   └── deepModel-deploy.xml     #   CD Job：Pipeline from SCM → Jenkinsfile.deploy
+    ├── Jenkinsfile                  # CI 流水线（编译 → 打镜像 → 推仓库 → 触发部署）
+    ├── Jenkinsfile.deploy           # CD 流水线（拉镜像 → 部署）
     └── scripts/
         └── deploy.sh               # 部署脚本：pull → 停旧 → 起新 → 健康检查
 ```
 
-## 两种 Pipeline 模式
+## 工作模式（对标公司 ci2k8s）
 
-| | Inline（jobs/*.xml） | SCM Pipeline（Jenkinsfile） |
-|--|--|--|
-| 流水线定义位置 | 嵌在 Job XML 的 `<script>` 里 | 独立 Jenkinsfile 文件 |
-| 注册方式 | `init.sh` 复制 XML 到 Jenkins | Jenkins UI 配 SCM 指向本仓库 |
-| 修改流水线 | 改 XML → 重新注册或 UI 改 | git push 即生效 |
-| 适合场景 | 快速启动、教学演示 | 生产级、多人协作 |
+**Job 壳子注册一次，流水线在 Git 里持续迭代。**
 
-当前 `deepModel-ci.xml` / `deepModel-cd.xml` 用的是 **Inline 模式**（开箱即用）。
-`Jenkinsfile` / `Jenkinsfile.deploy` 是同一流水线的 **SCM 版本**（功能更完整，如 Docker Agent 编译、stash/unstash 传递制品）。
+- `jobs/*.xml` 是 Job 壳子，定义 SCM 地址和 Script Path，**注册一次即可**
+- `Jenkinsfile` / `Jenkinsfile.deploy` 是实际流水线逻辑，**git push 即生效**
+- `scripts/` 放部署脚本等辅助文件
 
-## 使用方式
+| 改什么 | 怎么做 |
+|--------|--------|
+| 流水线逻辑（Stage、步骤） | 改 Jenkinsfile → git push |
+| 部署脚本 | 改 scripts/*.sh → git push |
+| Job 参数、SCM 路径 | 改 jobs/*.xml → `./register-jobs.sh <project>` |
 
-### 方式一：Inline 模式（当前使用）
+## 注册 Job
 
 ```bash
-# 在 practice/ 下启动 Jenkins 后注册 Job
-JOBS_DIR=../config/deepModel/jobs ./init.sh
+cd practice
+
+# 注册所有项目
+./register-jobs.sh
+
+# 只注册某个项目
+./register-jobs.sh deepModel
 ```
-
-Jenkins UI 直接出现 Job，点 Build Now 即可。
-
-### 方式二：SCM Pipeline 模式
-
-在 Jenkins UI 手动创建 Pipeline Job：
-- Definition: Pipeline script from SCM
-- SCM: Git → 本仓库 URL
-- Script Path: `deepModel/Jenkinsfile`（或 `deepModel/Jenkinsfile.deploy`）
-
-代码推送后 Jenkins 自动拉取最新 Jenkinsfile 执行。
 
 ## 如何新增一个项目
 
-1. 创建 `config/<project>/` 目录
-2. 至少提供以下之一：
-   - `jobs/<job-name>.xml` — Inline 模式，`init.sh` 可直接注册
-   - `Jenkinsfile` — SCM 模式，Jenkins UI 配 SCM 路径
-3. 按需加 `scripts/`（部署脚本等）
-4. 注册：`JOBS_DIR=../config/<project>/jobs ./init.sh`
+```bash
+# 1. 创建目录
+mkdir -p config/<project>/jobs config/<project>/scripts
+
+# 2. 写 Jenkinsfile
+#    参考 deepModel/Jenkinsfile
+
+# 3. 写 Job 壳子 XML
+#    参考 deepModel/jobs/deepModel-ci.xml
+#    关键：<scriptPath> 指向 <project>/Jenkinsfile
+
+# 4. 注册
+cd practice && ./register-jobs.sh <project>
+```

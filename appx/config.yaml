@@ -1,0 +1,8 @@
+# appx 聚合版本清单（对标公司 apps/build/config.yaml）
+# build.sh 按此清单从 Maven 仓库拉取已发布的模块 jar，解包后聚合成 appx mono jar。
+mono:
+  appx: 3.0.1
+
+modules:
+  mod-a: 1.0.3
+  mod-b: 1.0.2

@@ -3,7 +3,7 @@ set -e
 
 CONTAINER_NAME="${BUILD_SERVICE:-appx}-app"
 HOST_PORT="8800"
-CONTAINER_PORT="18080"
+CONTAINER_PORT="8800"
 
 echo "==> 部署 ${BUILD_SERVICE:-appx} Env=${Env:-local} deployID=${deployID:-}"
 echo "==> 拉取镜像: ${IMAGE}"

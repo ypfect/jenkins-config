@@ -3,8 +3,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE_DIR="${WORKSPACE:?}/pipeline"
-SETTINGS="${PIPELINE_DIR}/appx/maven/settings.xml"
 MOCK_DB="${SCRIPT_DIR}/mock/db-config.local.json"
 
 source "${SCRIPT_DIR}/lib.sh"
@@ -48,20 +46,13 @@ case "${MODULE}" in
     callback_log
     ;;
   build)
-    if [ ! -f "${SETTINGS}" ]; then
-      echo "ERROR: 未找到 ${SETTINGS}，请确认已 checkout pipeline"
-      exit 1
-    fi
-    cp "${SETTINGS}" settings.xml
-    echo "==> Maven 编译 ${BUILD_SERVICE:-appx}（demo 业务仓）"
-    mvn -B -s settings.xml -Dmaven.repo.local=/root/.m2/repository clean package -DskipTests
-    chown -R 1000:1000 .
+    bash "${SCRIPT_DIR}/build.sh"
     ;;
   dockerBuild)
     docker build \
       -t "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" \
       -t "${REGISTRY}/${IMAGE_NAME}:latest" \
-      .
+      result
     ;;
   dockerPush)
     docker push "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"

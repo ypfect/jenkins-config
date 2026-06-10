@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job">
   <actions/>
-  <description>appx CI：初始化 → checkTask → Maven 编译 → 打镜像 → push（对标 backend-appx-tx 精简版）</description>
+  <description>appx CI：初始化 → checkTask → 拉模块jar聚合打包 → 打镜像 → push（对标 build3.py -a appx）</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>

@@ -80,6 +80,41 @@ cd practice && ./register-jobs.sh appx
 # 部署后验证：curl http://localhost:8800/  → 返回聚合的模块列表
 ```
 
+## arap（对标公司"几个 Pod 拉jar→执行数据→对比数据→生产镜像"的完整路径，除 K8s）
+
+arap 在 appx 聚合的基础上，补齐了**数据库环节**：业务源码独立成 GitHub 仓
+[`ypfect/arap`](https://github.com/ypfect/arap)（对标公司 `apps/arap`），CI/CD 配置在此。
+`docker-compose` 新增 `postgres` 容器（对标构建 Pod 内的 `apps-build-pgv14`）。
+
+```
+CI(arap-ci):  拉jar聚合(arap+JDBC)
+            → 建临时库 testapp 灌 schema+data+upgrade（执行数据）
+            → pg_dump 出 base.dump（基准库）
+            → 对比 arap_target 现状，生成增量 upgrade.sql（对比数据）
+            → 打镜像(jar+db) → push
+CD(arap-deploy): 从镜像取 upgrade.sql 对 arap_target 执行（升级）→ 起服务连库 → curl
+```
+
+| 公司路径 | 本地复刻 |
+|----------|----------|
+| Pod 内 `apps-build-pgv14` | compose `postgres` 容器 |
+| `create_db.sh -d testapp` 灌 generated SQL + init-sql | `db-steps.sh createTestDb` 灌 `schema/data/upgrade` |
+| `pg_dump -Fc` 出 tenant.dump | `db-steps.sh dumpBase` 出 `base.dump` |
+| `dbtools` diff 生成差量升级 SQL | `db-steps.sh genUpgrade` 按 `meta_schema_version.seq` 挑增量 |
+| `do_sql_update` 对目标库执行升级 | `deploy.sh` 对 `arap_target` 执行 `upgrade.sql` |
+| `dockerbuild.py` 生产镜像 | `dockerBuild`（jar + db 脚本） |
+
+> 真实 arap 依赖内网 Nexus 的 jar、platform 底座与 `dbtools.jar`，本地无法启动；
+> 这里用自带 schema 的 mock arap **复刻完整路径形态**，DB 数据是 mock 的。
+
+```bash
+cd practice && docker compose up -d postgres && ./register-jobs.sh arap
+./trigger-arap-ci.sh --branch main --env local --deploy-id 30001
+./trigger-arap-deploy.sh --image localhost:5050/arap:<N> --env local --deploy-id 30001
+curl http://localhost:8801/        # 返回库版本 + 应收单列表
+# 增量验证：在 arap 仓加 db/upgrade/V<n>__*.sql → 重跑 CI，对比阶段只挑出新增 V<n>
+```
+
 ## 改什么、怎么做
 
 | 改什么 | 怎么做 |
@@ -92,5 +127,5 @@ cd practice && ./register-jobs.sh appx
 
 ```bash
 cd practice && ./register-jobs.sh          # 全部项目
-cd practice && ./register-jobs.sh deepModel appx
+cd practice && ./register-jobs.sh deepModel appx arap
 ```

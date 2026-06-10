@@ -41,6 +41,7 @@ pipeline {
               curl -sf -o settings.xml \
                 https://raw.githubusercontent.com/ypfect/jenkins-config/main/deepModel/maven/settings.xml
               mvn -B -s settings.xml -Dmaven.repo.local=/root/.m2/repository clean package -DskipTests
+              chown -R 1000:1000 .
             '''
             stash includes: 'target/**,Dockerfile,.dockerignore', name: 'artifacts'
           }

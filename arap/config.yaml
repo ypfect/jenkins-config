@@ -1,0 +1,7 @@
+# arap 版本清单（对标公司 apps/build/config.yaml）
+mono:
+  arap: 1.0.0
+
+# arap 运行时依赖（会被 copy-dependencies 拉取并合并进聚合 jar）
+deps:
+  postgresql: 42.7.4

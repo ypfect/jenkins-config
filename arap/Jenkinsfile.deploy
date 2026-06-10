@@ -1,0 +1,61 @@
+def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
+def STEPS = 'pipeline/arap/scripts/apps-build-steps.sh'
+
+pipeline {
+  agent none
+
+  parameters {
+    string(name: 'IMAGE', defaultValue: 'localhost:5050/arap:latest', description: '完整镜像地址')
+    string(name: 'Env', defaultValue: 'local', description: '目标环境')
+    string(name: 'deployID', defaultValue: '', description: '部署任务号')
+    string(name: 'CI_BUILD', defaultValue: '', description: '关联 CI 构建号（可选）')
+  }
+
+  environment {
+    DEPLOY_ENV = "${params.Env}"
+    deployID = "${params.deployID}"
+    IMAGE = "${params.IMAGE}"
+  }
+
+  stages {
+    stage('初始化变量') {
+      agent { label 'built-in' }
+      steps {
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}"
+          ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="arap CD 开始"
+        """
+      }
+    }
+
+    stage('执行升级+部署') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}"
+          ${STEPS} --Module=deploy
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      node('built-in') {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=cd
+          ${STEPS} --Module=writeStatus --taskStatus=SUCCESS --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
+        """
+      }
+    }
+    failure {
+      node('built-in') {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=cd
+          [ -f ${STEPS} ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
+        """
+      }
+    }
+  }
+}

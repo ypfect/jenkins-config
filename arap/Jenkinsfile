@@ -1,0 +1,126 @@
+def REGISTRY = 'localhost:5050'
+def IMAGE_NAME = 'arap'
+def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
+def ARAP_REPO = 'https://github.com/ypfect/arap.git'
+def STEPS = 'pipeline/arap/scripts/apps-build-steps.sh'
+
+pipeline {
+  agent none
+
+  parameters {
+    string(name: 'Branch', defaultValue: 'main', description: '业务代码分支')
+    string(name: 'Env', defaultValue: 'local', description: '目标环境')
+    string(name: 'deployID', defaultValue: '', description: '部署任务号')
+  }
+
+  environment {
+    REGISTRY = "${REGISTRY}"
+    IMAGE_NAME = "${IMAGE_NAME}"
+    IMAGE = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+    DEPLOY_ENV = "${params.Env}"
+    deployID = "${params.deployID}"
+    Branch = "${params.Branch}"
+  }
+
+  stages {
+    stage('初始化变量') {
+      agent { label 'built-in' }
+      steps {
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}"
+          ${STEPS} --Module=getAppx --Env="\${DEPLOY_ENV}"
+        """
+      }
+    }
+
+    stage('检查是否满足运行要求') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export Env="\${DEPLOY_ENV}" Branch="\${Branch}"
+          ${STEPS} --Module=checkTask --Env="\${DEPLOY_ENV}" --Branch="\${Branch}"
+        """
+      }
+    }
+
+    stage('拉jar/聚合打包') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-21'
+          args '-u root -v maven-m2:/root/.m2/repository'
+        }
+      }
+      steps {
+        dir('pipeline') { git url: CONFIG_REPO, branch: params.Branch, changelog: false }
+        git url: ARAP_REPO, branch: params.Branch
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}"
+          ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="拉取 arap 并聚合"
+          ${STEPS} --Module=build
+        """
+        stash includes: 'result/**', name: 'artifacts'
+      }
+    }
+
+    stage('执行数据(建临时库灌数)') {
+      agent { label 'built-in' }
+      steps {
+        unstash 'artifacts'
+        sh "${STEPS} --Module=createTestDb"
+      }
+    }
+
+    stage('对比数据(出基准+升级SQL)') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          ${STEPS} --Module=dumpBase
+          ${STEPS} --Module=genUpgrade
+        """
+      }
+    }
+
+    stage('打镜像') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export REGISTRY="\${REGISTRY}" IMAGE_NAME="\${IMAGE_NAME}" BUILD_NUMBER="\${BUILD_NUMBER}"
+          ${STEPS} --Module=dockerBuild
+        """
+      }
+    }
+
+    stage('推镜像') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export REGISTRY="\${REGISTRY}" IMAGE_NAME="\${IMAGE_NAME}" BUILD_NUMBER="\${BUILD_NUMBER}"
+          ${STEPS} --Module=dockerPush
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      node('built-in') {
+        echo "arap CI 完成。镜像: ${env.IMAGE}"
+        echo "下一步: ./practice/trigger-arap-deploy.sh --image ${env.IMAGE} --env ${params.Env} --deploy-id ${params.deployID}"
+        archiveArtifacts artifacts: 'result/*.jar', fingerprint: true, allowEmptyArchive: true
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" BUILD_NUMBER="\${BUILD_NUMBER}" IMAGE="\${IMAGE}" JOB_TYPE=ci
+          ${STEPS} --Module=writeStatus --taskStatus=SUCCESS --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
+        """
+      }
+    }
+    failure {
+      node('built-in') {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=ci
+          [ -f ${STEPS} ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
+        """
+      }
+    }
+  }
+}

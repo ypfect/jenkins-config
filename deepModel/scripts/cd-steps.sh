@@ -11,7 +11,9 @@ case "${MODULE}" in
   logInit)
     echo "=== deepModel CD ==="
     echo "Env=${Env:-local}  deployID=${deployID:-}  IMAGE=${IMAGE:-}"
-    [ -n "${CI_BUILD:-}" ] && echo "CI_BUILD=${CI_BUILD}"
+    if [ -n "${CI_BUILD:-}" ]; then
+      echo "CI_BUILD=${CI_BUILD}"
+    fi
     ;;
   deploy)
     if [ -z "${IMAGE:-}" ]; then

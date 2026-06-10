@@ -44,7 +44,7 @@
       <branches>
         <hudson.plugins.git.BranchSpec>
           <name>*/main</name>
-        </hudson.model.BranchSpec>
+        </hudson.plugins.git.BranchSpec>
       </branches>
     </scm>
     <scriptPath>deepModel/Jenkinsfile.deploy</scriptPath>

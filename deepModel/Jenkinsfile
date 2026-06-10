@@ -17,7 +17,7 @@ pipeline {
     IMAGE_NAME = "${IMAGE_NAME}"
     IMAGE = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
     PIPELINE_DIR = "${WORKSPACE}/pipeline"
-    Env = "${params.Env}"
+    DEPLOY_ENV = "${params.Env}"
     deployID = "${params.deployID}"
     BRANCH = "${params.BRANCH}"
   }
@@ -30,7 +30,7 @@ pipeline {
           git url: CONFIG_REPO, branch: 'main', changelog: false
         }
         sh '''
-          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}"
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}"
           pipeline/deepModel/scripts/ci-steps.sh logInit
         '''
       }
@@ -83,7 +83,7 @@ pipeline {
         unstash 'artifacts'
         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
         sh '''
-          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" IMAGE="${IMAGE}" STATUS=SUCCESS
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" IMAGE="${IMAGE}" STATUS=SUCCESS
           pipeline/deepModel/scripts/ci-steps.sh writeStatus
         '''
       }
@@ -91,7 +91,7 @@ pipeline {
     failure {
       node('built-in') {
         sh '''
-          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
           [ -f pipeline/deepModel/scripts/ci-steps.sh ] && pipeline/deepModel/scripts/ci-steps.sh writeStatus || true
         '''
       }

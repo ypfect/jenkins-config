@@ -11,7 +11,7 @@ pipeline {
   }
 
   environment {
-    Env = "${params.Env}"
+    DEPLOY_ENV = "${params.Env}"
     deployID = "${params.deployID}"
     CI_BUILD = "${params.CI_BUILD}"
     IMAGE = "${params.IMAGE}"
@@ -25,7 +25,7 @@ pipeline {
           git url: CONFIG_REPO, branch: 'main', changelog: false
         }
         sh '''
-          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" CI_BUILD="${CI_BUILD}" BUILD_NUMBER="${BUILD_NUMBER}"
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" IMAGE="${IMAGE}" CI_BUILD="${CI_BUILD}" BUILD_NUMBER="${BUILD_NUMBER}"
           pipeline/deepModel/scripts/cd-steps.sh logInit
         '''
       }
@@ -35,7 +35,7 @@ pipeline {
       agent { label 'built-in' }
       steps {
         sh '''
-          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}"
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}"
           pipeline/deepModel/scripts/cd-steps.sh deploy
         '''
       }
@@ -46,7 +46,7 @@ pipeline {
     success {
       node('built-in') {
         sh '''
-          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=SUCCESS
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=SUCCESS
           pipeline/deepModel/scripts/cd-steps.sh writeStatus
         '''
       }
@@ -54,7 +54,7 @@ pipeline {
     failure {
       node('built-in') {
         sh '''
-          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
+          export Env="${DEPLOY_ENV}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
           [ -f pipeline/deepModel/scripts/cd-steps.sh ] && pipeline/deepModel/scripts/cd-steps.sh writeStatus || true
         '''
       }

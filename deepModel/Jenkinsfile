@@ -26,8 +26,7 @@ pipeline {
       agent {
         docker {
           image 'maven:3.9-eclipse-temurin-21'
-          args '-v maven-m2:/root/.m2 ' +
-               '-v /opt/maven-settings.xml:/root/.m2/settings.xml:ro'
+          args '-v maven-m2:/root/.m2'
         }
       }
       stages {
@@ -38,7 +37,12 @@ pipeline {
         }
         stage('Package') {
           steps {
-            sh 'mvn -B clean package -DskipTests'
+            sh '''
+              mkdir -p /root/.m2
+              curl -sf -o /root/.m2/settings.xml \
+                https://raw.githubusercontent.com/ypfect/jenkins-config/main/deepModel/maven/settings.xml
+              mvn -B clean package -DskipTests
+            '''
             stash includes: 'target/**,Dockerfile,.dockerignore', name: 'artifacts'
           }
         }

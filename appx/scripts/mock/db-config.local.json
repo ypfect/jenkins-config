@@ -1,0 +1,8 @@
+{
+  "env": "local",
+  "host": "localhost",
+  "port": 5432,
+  "user": "postgres",
+  "password": "123",
+  "note": "本地练习 mock，对标公司 getDbConfig 拉取的环境 PG 配置"
+}

@@ -1,0 +1,129 @@
+def REGISTRY = 'localhost:5050'
+def IMAGE_NAME = 'appx'
+def BUILD_SERVICE = 'appx'
+// 练习环境用 demo 仓代管 appx 业务代码；公司真实场景 checkout apps/build + build3.py -a appx
+def APP_REPO = 'https://github.com/ypfect/deepModel.git'
+def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
+def STEPS = 'pipeline/appx/scripts/apps-build-steps.sh'
+
+pipeline {
+  agent none
+
+  parameters {
+    string(name: 'Branch', defaultValue: 'main', description: '业务代码分支（对标公司 Branch）')
+    string(name: 'Env', defaultValue: 'local', description: '目标环境')
+    string(name: 'deployID', defaultValue: '', description: '部署任务号')
+  }
+
+  environment {
+    REGISTRY = "${REGISTRY}"
+    IMAGE_NAME = "${IMAGE_NAME}"
+    BUILD_SERVICE = "${BUILD_SERVICE}"
+    IMAGE = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+    DEPLOY_ENV = "${params.Env}"
+    deployID = "${params.deployID}"
+    Branch = "${params.Branch}"
+  }
+
+  stages {
+    stage('初始化变量') {
+      agent { label 'built-in' }
+      steps {
+        dir('pipeline') {
+          git url: CONFIG_REPO, branch: 'main', changelog: false
+        }
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
+          ${STEPS} --Module=getAppx --Env="\${DEPLOY_ENV}"
+          ${STEPS} --Module=getDbConfig --Env="\${DEPLOY_ENV}"
+        """
+      }
+    }
+
+    stage('检查是否满足运行要求') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}"
+          ${STEPS} --Module=checkTask --Env="\${DEPLOY_ENV}" --Branch="\${Branch}"
+        """
+      }
+    }
+
+    stage('拉取代码/打包') {
+      agent {
+        docker {
+          image 'maven:3.9-eclipse-temurin-21'
+          args '-u root -v maven-m2:/root/.m2/repository'
+        }
+      }
+      stages {
+        stage('Checkout') {
+          steps {
+            sh """
+              export Env="\${DEPLOY_ENV}" BUILD_NUMBER="\${BUILD_NUMBER}"
+              ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="开始 checkout"
+            """
+            dir('pipeline') {
+              git url: CONFIG_REPO, branch: 'main', changelog: false
+            }
+            git url: APP_REPO, branch: params.Branch
+          }
+        }
+        stage('Build') {
+          steps {
+            sh """
+              export Env="\${DEPLOY_ENV}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
+              ${STEPS} --Module=build
+            """
+            stash includes: 'target/**,Dockerfile,.dockerignore,db-config.json', name: 'artifacts'
+          }
+        }
+      }
+    }
+
+    stage('打镜像') {
+      agent { label 'built-in' }
+      steps {
+        unstash 'artifacts'
+        sh """
+          export REGISTRY="\${REGISTRY}" IMAGE_NAME="\${IMAGE_NAME}" BUILD_NUMBER="\${BUILD_NUMBER}"
+          ${STEPS} --Module=dockerBuild
+        """
+      }
+    }
+
+    stage('推镜像') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export REGISTRY="\${REGISTRY}" IMAGE_NAME="\${IMAGE_NAME}" BUILD_NUMBER="\${BUILD_NUMBER}"
+          ${STEPS} --Module=dockerPush
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      node('built-in') {
+        echo "appx CI 完成。镜像: ${env.IMAGE}"
+        echo "下一步: ./practice/trigger-appx-deploy.sh --image ${env.IMAGE} --env ${params.Env} --deploy-id ${params.deployID}"
+        unstash 'artifacts'
+        archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" IMAGE="\${IMAGE}" STATUS=SUCCESS JOB_TYPE=ci
+          ${STEPS} --Module=writeStatus --taskStatus=SUCCESS --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
+        """
+      }
+    }
+    failure {
+      node('built-in') {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" STATUS=FAILURE JOB_TYPE=ci
+          [ -f ${STEPS} ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
+        """
+      }
+    }
+  }
+}

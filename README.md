@@ -46,16 +46,38 @@ CI **不会**自动触发 CD，需单独触发（Jenkins UI 或 `practice/trigge
 | `--Module=writeStatus` | `writeStatus` |
 | helm deploy | `cd-steps.sh deploy` |
 
+## appx（对标 backend-appx-tx 精简版）
+
+```
+appx/
+├── jobs/appx-ci.xml / appx-deploy.xml
+├── Jenkinsfile / Jenkinsfile.deploy
+└── scripts/apps-build-steps.sh   # --Module=getAppx|getDbConfig|checkTask|build|...
+```
+
+| 公司 | 本地 appx |
+|------|-----------|
+| `build3.py -a appx` | `--Module=build`（Maven；demo 仓代管业务代码） |
+| 参数 Branch / Env / deployID | 同名 |
+| appx 端口 8800 | 对外 8800 → 容器 18080（demo jar） |
+
+```bash
+cd practice && ./register-jobs.sh appx
+./trigger-appx-ci.sh --branch main --env local --deploy-id 10001
+./trigger-appx-deploy.sh --image localhost:5050/appx:<N> --env local --deploy-id 10001
+```
+
 ## 改什么、怎么做
 
 | 改什么 | 怎么做 |
 |--------|--------|
 | 流水线 Stage | 改 Jenkinsfile → git push |
 | 构建/部署逻辑 | 改 scripts/*.sh → git push |
-| Job 参数 | 改 jobs/*.xml → `./register-jobs.sh deepModel` |
+| Job 参数 | 改 jobs/*.xml → `./register-jobs.sh <project>` |
 
 ## 注册 Job
 
 ```bash
-cd practice && ./register-jobs.sh deepModel
+cd practice && ./register-jobs.sh          # 全部项目
+cd practice && ./register-jobs.sh deepModel appx
 ```

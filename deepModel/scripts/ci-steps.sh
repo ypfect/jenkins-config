@@ -4,7 +4,8 @@ set -euo pipefail
 
 MODULE="${1:?用法: ci-steps.sh <module>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE_DIR="${PIPELINE_DIR:-${WORKSPACE}/pipeline}"
+# agent none 时顶层 environment 的 WORKSPACE 为 null，必须在 shell 运行时解析
+PIPELINE_DIR="${WORKSPACE:?}/pipeline"
 SETTINGS="${PIPELINE_DIR}/deepModel/maven/settings.xml"
 
 source "${SCRIPT_DIR}/lib.sh"

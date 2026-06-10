@@ -16,7 +16,6 @@ pipeline {
     REGISTRY = "${REGISTRY}"
     IMAGE_NAME = "${IMAGE_NAME}"
     IMAGE = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
-    PIPELINE_DIR = "${WORKSPACE}/pipeline"
     DEPLOY_ENV = "${params.Env}"
     deployID = "${params.deployID}"
     BRANCH = "${params.BRANCH}"
@@ -46,6 +45,9 @@ pipeline {
       stages {
         stage('Checkout') {
           steps {
+            dir('pipeline') {
+              git url: CONFIG_REPO, branch: 'main', changelog: false
+            }
             git url: APP_REPO, branch: params.BRANCH
           }
         }

@@ -1,14 +1,62 @@
+def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
+
 pipeline {
-  agent { label 'built-in' }
+  agent none
 
   parameters {
     string(name: 'IMAGE', defaultValue: 'localhost:5050/deepmodel:latest', description: '完整镜像地址')
+    string(name: 'Env', defaultValue: 'local', description: '目标环境')
+    string(name: 'deployID', defaultValue: '', description: '部署任务号（与 CI 保持一致）')
+    string(name: 'CI_BUILD', defaultValue: '', description: '关联的 CI 构建号（可选）')
+  }
+
+  environment {
+    Env = "${params.Env}"
+    deployID = "${params.deployID}"
+    CI_BUILD = "${params.CI_BUILD}"
+    IMAGE = "${params.IMAGE}"
   }
 
   stages {
-    stage('Deploy') {
+    stage('Init') {
+      agent { label 'built-in' }
       steps {
-        sh "chmod +x deepModel/scripts/deploy.sh && IMAGE=${params.IMAGE} deepModel/scripts/deploy.sh"
+        dir('pipeline') {
+          git url: CONFIG_REPO, branch: 'main', changelog: false
+        }
+        sh '''
+          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" CI_BUILD="${CI_BUILD}" BUILD_NUMBER="${BUILD_NUMBER}"
+          pipeline/deepModel/scripts/cd-steps.sh logInit
+        '''
+      }
+    }
+
+    stage('Deploy') {
+      agent { label 'built-in' }
+      steps {
+        sh '''
+          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}"
+          pipeline/deepModel/scripts/cd-steps.sh deploy
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      node('built-in') {
+        sh '''
+          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=SUCCESS
+          pipeline/deepModel/scripts/cd-steps.sh writeStatus
+        '''
+      }
+    }
+    failure {
+      node('built-in') {
+        sh '''
+          export Env="${Env}" deployID="${deployID}" IMAGE="${IMAGE}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
+          [ -f pipeline/deepModel/scripts/cd-steps.sh ] && pipeline/deepModel/scripts/cd-steps.sh writeStatus || true
+        '''
       }
     }
   }

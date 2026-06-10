@@ -5,6 +5,7 @@ CONTAINER_NAME="deepmodel-app"
 HOST_PORT="18080"
 CONTAINER_PORT="18080"
 
+echo "==> 部署任务 Env=${Env:-local} deployID=${deployID:-}"
 echo "==> 拉取镜像: ${IMAGE}"
 docker pull "${IMAGE}"
 

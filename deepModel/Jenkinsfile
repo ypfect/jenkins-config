@@ -1,24 +1,38 @@
 def REGISTRY = 'localhost:5050'
 def IMAGE_NAME = 'deepmodel'
 def APP_REPO = 'https://github.com/ypfect/deepModel.git'
+def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
 
 pipeline {
   agent none
 
   parameters {
     string(name: 'BRANCH', defaultValue: 'main', description: '业务代码分支')
+    string(name: 'Env', defaultValue: 'local', description: '目标环境（对标公司 Env 参数）')
+    string(name: 'deployID', defaultValue: '', description: '部署任务号（对标公司 deployID）')
+  }
+
+  environment {
+    REGISTRY = "${REGISTRY}"
+    IMAGE_NAME = "${IMAGE_NAME}"
+    IMAGE = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+    PIPELINE_DIR = "${WORKSPACE}/pipeline"
+    Env = "${params.Env}"
+    deployID = "${params.deployID}"
+    BRANCH = "${params.BRANCH}"
   }
 
   stages {
-    stage('Log') {
+    stage('Init') {
       agent { label 'built-in' }
       steps {
-        echo "=== deepModel CI/CD ==="
-        echo "Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-        echo "Branch: ${params.BRANCH}"
-        echo "Source: ${APP_REPO}"
-        echo "Registry: ${REGISTRY}/${IMAGE_NAME}"
-        echo "Build URL: ${env.BUILD_URL}"
+        dir('pipeline') {
+          git url: CONFIG_REPO, branch: 'main', changelog: false
+        }
+        sh '''
+          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}"
+          pipeline/deepModel/scripts/ci-steps.sh logInit
+        '''
       }
     }
 
@@ -37,12 +51,7 @@ pipeline {
         }
         stage('Package') {
           steps {
-            sh '''
-              curl -sf -o settings.xml \
-                https://raw.githubusercontent.com/ypfect/jenkins-config/main/deepModel/maven/settings.xml
-              mvn -B -s settings.xml -Dmaven.repo.local=/root/.m2/repository clean package -DskipTests
-              chown -R 1000:1000 .
-            '''
+            sh 'pipeline/deepModel/scripts/ci-steps.sh package'
             stash includes: 'target/**,Dockerfile,.dockerignore', name: 'artifacts'
           }
         }
@@ -53,26 +62,14 @@ pipeline {
       agent { label 'built-in' }
       steps {
         unstash 'artifacts'
-        sh "docker build -t ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} -t ${REGISTRY}/${IMAGE_NAME}:latest ."
+        sh 'pipeline/deepModel/scripts/ci-steps.sh dockerBuild'
       }
     }
 
     stage('Push') {
       agent { label 'built-in' }
       steps {
-        sh "docker push ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
-        sh "docker push ${REGISTRY}/${IMAGE_NAME}:latest"
-      }
-    }
-
-    stage('Deploy') {
-      agent { label 'built-in' }
-      steps {
-        build job: 'deepModel-deploy',
-              parameters: [
-                string(name: 'IMAGE', value: "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}")
-              ],
-              wait: true
+        sh 'pipeline/deepModel/scripts/ci-steps.sh dockerPush'
       }
     }
   }
@@ -80,8 +77,23 @@ pipeline {
   post {
     success {
       node('built-in') {
+        echo "CI 完成。镜像: ${env.IMAGE}"
+        echo "下一步: 触发 deepModel-deploy，参数 IMAGE=${env.IMAGE} Env=${params.Env} deployID=${params.deployID}"
+        echo "或运行: practice/trigger-deploy.sh --image ${env.IMAGE} --env ${params.Env} --deploy-id ${params.deployID}"
         unstash 'artifacts'
         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+        sh '''
+          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" IMAGE="${IMAGE}" STATUS=SUCCESS
+          pipeline/deepModel/scripts/ci-steps.sh writeStatus
+        '''
+      }
+    }
+    failure {
+      node('built-in') {
+        sh '''
+          export Env="${Env}" deployID="${deployID}" BRANCH="${BRANCH}" BUILD_NUMBER="${BUILD_NUMBER}" STATUS=FAILURE
+          [ -f pipeline/deepModel/scripts/ci-steps.sh ] && pipeline/deepModel/scripts/ci-steps.sh writeStatus || true
+        '''
       }
     }
   }

@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job">
   <actions/>
-  <description>CD：接收镜像地址 → 部署到本地 Docker</description>
+  <description>CD：拉镜像 → 部署到本地 Docker（独立触发）</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -10,6 +10,24 @@
           <name>IMAGE</name>
           <description>完整镜像地址（如 localhost:5050/deepmodel:3）</description>
           <defaultValue>localhost:5050/deepmodel:latest</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>Env</name>
+          <description>目标环境</description>
+          <defaultValue>local</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>deployID</name>
+          <description>部署任务号</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>CI_BUILD</name>
+          <description>关联的 CI 构建号（可选）</description>
+          <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -26,7 +44,7 @@
       <branches>
         <hudson.plugins.git.BranchSpec>
           <name>*/main</name>
-        </hudson.plugins.git.BranchSpec>
+        </hudson.model.BranchSpec>
       </branches>
     </scm>
     <scriptPath>deepModel/Jenkinsfile.deploy</scriptPath>

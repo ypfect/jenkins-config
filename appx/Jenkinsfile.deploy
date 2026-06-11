@@ -1,5 +1,5 @@
 def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
-def STEPS = 'pipeline/appx/scripts/apps-build-steps.sh'
+def STEPS = 'python3 -u pipeline/appx/scripts/apps-build-steps.py'
 
 pipeline {
   agent none
@@ -23,9 +23,7 @@ pipeline {
     stage('初始化变量') {
       agent { label 'built-in' }
       steps {
-        dir('pipeline') {
-          git url: CONFIG_REPO, branch: 'main', changelog: false
-        }
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
         sh """
           export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" CI_BUILD="\${CI_BUILD}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
           ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="CD 开始"
@@ -49,7 +47,7 @@ pipeline {
     success {
       node('built-in') {
         sh """
-          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" STATUS=SUCCESS JOB_TYPE=cd
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=cd STATUS=SUCCESS
           ${STEPS} --Module=writeStatus --taskStatus=SUCCESS --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
         """
       }
@@ -57,8 +55,8 @@ pipeline {
     failure {
       node('built-in') {
         sh """
-          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" STATUS=FAILURE JOB_TYPE=cd
-          [ -f ${STEPS} ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" IMAGE="\${IMAGE}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=cd STATUS=FAILURE
+          [ -f pipeline/appx/scripts/apps-build-steps.py ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
         """
       }
     }

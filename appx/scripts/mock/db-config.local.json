@@ -1,8 +1,12 @@
 {
-  "env": "local",
-  "host": "localhost",
-  "port": 5432,
-  "user": "postgres",
-  "password": "123",
-  "note": "本地练习 mock，对标公司 getDbConfig 拉取的环境 PG 配置"
+  "local": {
+    "host": "postgres",
+    "port": "5432",
+    "user": "postgres",
+    "pass": "123",
+    "superDbUser": "postgres",
+    "superDbPasswd": "123",
+    "dbList": ["tenant-base", "identity-base"],
+    "note": "mock getDbConfig；Pod 内构建库 key 由 insertDbinfo 动态插入"
+  }
 }

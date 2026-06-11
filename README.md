@@ -46,38 +46,33 @@ CI **不会**自动触发 CD，需单独触发（Jenkins UI 或 `practice/trigge
 | `--Module=writeStatus` | `writeStatus` |
 | helm deploy | `cd-steps.sh deploy` |
 
-## appx（对标 backend-appx-tx + apps/build/build3.py）
+## appx（对标 backend-appx-tx + **apps/build 为中心**）
 
-appx 的本质是**聚合 jar**：按 `config.yaml` 版本清单，从 Maven 仓库拉各模块已发布的
-二进制 jar → 解包 → 合并到主壳 → `jar` 重打包成一个 mono fat jar。**全程不编译业务源码**。
+与公司一致：**Pod 内以 `apps/build` checkout 到 `apps_src/` 为工作中心**，ci2k8s 只做薄编排。
 
 ```
-appx/
-├── config.yaml                   # 版本清单（mono.appx + modules）= 公司 apps/build/config.yaml
-├── mock-modules/                 # 模拟"已发布到 Nexus 的模块"：appx 主壳 + mod-a + mod-b
-├── Dockerfile                    # 业务镜像模板
-├── jobs/appx-ci.xml / appx-deploy.xml
-├── Jenkinsfile / Jenkinsfile.deploy
-└── scripts/
-    ├── apps-build-steps.sh       # --Module=getAppx|checkTask|build|dockerBuild|...
-    └── build.sh                  # 核心聚合：install→unpack→cp 合并→jar 重打包（对标 build3.py）
+workspace/appx-ci/
+├── pipeline/appx/              ← jenkins-config 编排层（Jenkinsfile + apps-build-steps.py）
+└── apps_src/                   ← checkout ypfect/77core-apps-build（= 公司 apps/build）
+    ├── build3.py / create_db.sh / dbtools.sh / config.yaml
+    ├── upgrade/1_before/  upgrade/2_after/
+    └── result/                 ← ★ 所有产物（jar / dump / dbtools/*.sql）
 ```
 
-| 公司 apps/build/build3.py | 本地 build.sh |
-|--------------------------|---------------|
-| `config.yaml` 版本清单 | 同名同结构 |
-| `mvn dependency:unpack` 从 Nexus 拉各 app jar | 同命令，从本地 m2 拉 mock 模块 jar |
-| `cp -Rf BOOT-INF/classes/* lib/*` 合并到主 appx | `cp -Rf` 合并到主壳 |
-| 合并 string-res / aware / kmodule.xml | 合并 `appx-modules.list` 清单碎片 |
-| `jar cfM0 result/appx-<ver>.jar *` | `jar cfe result/appx-<ver>.jar` |
-
-> 首段 `mvn install` 仅用于在本地 m2 "模拟模块已发布到 Nexus"，对标公司各 app 工程已各自 CI 发布。
+| 公司 | 本地 |
+|------|------|
+| ci2k8s `backend-appx-tx/scripts/apps-build-steps.py` | `pipeline/appx/scripts/apps-build-steps.py` |
+| checkout `apps/build.git` → `apps_src/` | checkout `77core-apps-build` → `apps_src/` |
+| `cd apps_src && python3 build3.py -a appx` | 同命令；Nexus 不可用时 fallback 到 mock-modules |
+| `apps-build-pgv14` createdb testapp | compose `postgres` + `--Module=createdb` |
+| `genUpgradeScript` → `apps_src/result/dbtools/` | 同路径（本地 mock SQL） |
+| `apps-build-docker` dockerbuild | `--Module=dockerBuild` 读 `apps_src/result/` |
 
 ```bash
-cd practice && ./register-jobs.sh appx
-./trigger-appx-ci.sh --branch main --env local --deploy-id 10001
+cd practice && docker compose up -d postgres && ./register-jobs.sh appx
+./trigger-appx-ci.sh --branch master --env local --deploy-id 10001
 ./trigger-appx-deploy.sh --image localhost:5050/appx:<N> --env local --deploy-id 10001
-# 部署后验证：curl http://localhost:8800/  → 返回聚合的模块列表
+curl http://localhost:8800/
 ```
 
 ## arap（对标公司"几个 Pod 拉jar→执行数据→对比数据→生产镜像"的完整路径，除 K8s）
@@ -120,7 +115,7 @@ curl http://localhost:8801/        # 返回库版本 + 应收单列表
 | 改什么 | 怎么做 |
 |--------|--------|
 | 流水线 Stage | 改 Jenkinsfile → git push |
-| 构建/部署逻辑 | 改 scripts/*.sh → git push |
+| 构建/部署逻辑 | 改 `apps_src/`（77core-apps-build）或 `pipeline/appx/scripts/` → git push |
 | Job 参数 | 改 jobs/*.xml → `./register-jobs.sh <project>` |
 
 ## 注册 Job

@@ -2,13 +2,15 @@ def REGISTRY = 'localhost:5050'
 def IMAGE_NAME = 'appx'
 def BUILD_SERVICE = 'appx'
 def CONFIG_REPO = 'https://github.com/ypfect/jenkins-config.git'
-def STEPS = 'pipeline/appx/scripts/apps-build-steps.sh'
+def BUILD_REPO = 'https://github.com/ypfect/77core-apps-build.git'
+def STEPS = 'python3 -u pipeline/appx/scripts/apps-build-steps.py'
+def DB_CONFIG = 'postgres.local-db-config.json'
 
 pipeline {
   agent none
 
   parameters {
-    string(name: 'Branch', defaultValue: 'main', description: '配置/模块清单分支')
+    string(name: 'Branch', defaultValue: 'master', description: 'apps/build 分支（77core-apps-build）')
     string(name: 'Env', defaultValue: 'local', description: '目标环境')
     string(name: 'deployID', defaultValue: '', description: '部署任务号')
   }
@@ -21,15 +23,14 @@ pipeline {
     DEPLOY_ENV = "${params.Env}"
     deployID = "${params.deployID}"
     Branch = "${params.Branch}"
+    DBFILES = "${DB_CONFIG}"
   }
 
   stages {
     stage('初始化变量') {
       agent { label 'built-in' }
       steps {
-        dir('pipeline') {
-          git url: CONFIG_REPO, branch: 'main', changelog: false
-        }
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
         sh """
           export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
           ${STEPS} --Module=getAppx --Env="\${DEPLOY_ENV}"
@@ -42,13 +43,25 @@ pipeline {
       agent { label 'built-in' }
       steps {
         sh """
-          export Env="\${DEPLOY_ENV}" Branch="\${Branch}"
+          export Env="\${DEPLOY_ENV}" Branch="\${Branch}" DBfiles="\${DBFILES}"
           ${STEPS} --Module=checkTask --Env="\${DEPLOY_ENV}" --Branch="\${Branch}"
+          ${STEPS} --Module=insertDbinfo --Env="\${DEPLOY_ENV}" --DBfiles="\${DBFILES}" \\
+            --DBHost=postgres --DBPort=5432 --DBUser=postgres --DBPswd=123
         """
       }
     }
 
-    stage('拉取模块jar/聚合打包') {
+    stage('创建testapp数据库') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export Env="\${DEPLOY_ENV}"
+          ${STEPS} --Module=createdb
+        """
+      }
+    }
+
+    stage('拉取代码/打包') {
       agent {
         docker {
           image 'maven:3.9-eclipse-temurin-21'
@@ -56,15 +69,36 @@ pipeline {
         }
       }
       steps {
-        dir('pipeline') {
-          git url: CONFIG_REPO, branch: params.Branch, changelog: false
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
+        dir('apps_src') {
+          git url: BUILD_REPO, branch: params.Branch
         }
         sh """
-          export Env="\${DEPLOY_ENV}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
-          ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="开始拉取模块 jar 并聚合"
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" BUILD_SERVICE="\${BUILD_SERVICE}"
+          ${STEPS} --Module=callbackLog --deployID="\${deployID}" --log_info="开始拉取 apps/build 并 build3.py -a appx"
+          ${STEPS} --Module=prepareBuild
           ${STEPS} --Module=build
         """
-        stash includes: 'result/**', name: 'artifacts'
+        stash includes: 'apps_src/result/**', name: 'artifacts'
+      }
+    }
+
+    stage('后台服务数据库升级脚本制作') {
+      agent { label 'built-in' }
+      steps {
+        unstash 'artifacts'
+        sh """
+          export Env="\${DEPLOY_ENV}" DBfiles="\${DBFILES}"
+          ${STEPS} --Module=genUpgradeScript --Env="\${DEPLOY_ENV}" --DBfiles="\${DBFILES}" \\
+            --DbtoolsPath="\${WORKSPACE}/apps_src/result/dbtools/"
+        """
+      }
+    }
+
+    stage('基准库校验-应用api-buildtime') {
+      agent { label 'built-in' }
+      steps {
+        sh "${STEPS} --Module=checkDbBuildtime --Env=\"\${DEPLOY_ENV}\""
       }
     }
 
@@ -93,21 +127,26 @@ pipeline {
   post {
     success {
       node('built-in') {
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
         echo "appx CI 完成。镜像: ${env.IMAGE}"
+        echo "产物目录: apps_src/result/（对标公司 apps/build）"
         echo "下一步: ./practice/trigger-appx-deploy.sh --image ${env.IMAGE} --env ${params.Env} --deploy-id ${params.deployID}"
-        unstash 'artifacts'
-        archiveArtifacts artifacts: 'result/*.jar', fingerprint: true
+        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+          unstash 'artifacts'
+          archiveArtifacts artifacts: 'apps_src/result/**', fingerprint: true, allowEmptyArchive: true
+        }
         sh """
-          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" IMAGE="\${IMAGE}" JOB_TYPE=ci
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" IMAGE="\${IMAGE}" JOB_TYPE=ci STATUS=SUCCESS
           ${STEPS} --Module=writeStatus --taskStatus=SUCCESS --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
         """
       }
     }
     failure {
       node('built-in') {
+        dir('pipeline') { git url: CONFIG_REPO, branch: 'main', changelog: false }
         sh """
-          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=ci
-          [ -f ${STEPS} ] && ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}" || true
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" Branch="\${Branch}" BUILD_NUMBER="\${BUILD_NUMBER}" JOB_TYPE=ci STATUS=FAILURE
+          ${STEPS} --Module=writeStatus --taskStatus=FAILURE --deployID="\${deployID}" --buildID="\${BUILD_NUMBER}"
         """
       }
     }

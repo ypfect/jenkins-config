@@ -219,6 +219,83 @@ def module_check_db_buildtime(_: argparse.Namespace) -> None:
     print("==> check_db_buildtime OK（本地练习跳过）")
 
 
+def module_init_env_dbs(_: argparse.Namespace) -> None:
+    run([sys.executable, str(SCRIPTS / "init_local_env_dbs.py")])
+
+
+def module_restart_svc(_: argparse.Namespace) -> None:
+    print(f"==> restartSvc stop（mock）Svclist=appx Env={env('Env', 'local')}")
+
+
+def module_backupdb(_: argparse.Namespace) -> None:
+    backup_dir = Path("/var/jenkins_home/db-backup") / env("Env", "local")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    data = json.loads(db_config_file().read_text(encoding="utf-8"))
+    cfg = data[env("Env", "local")]
+    net = env("PG_NETWORK", "practice_default")
+    dbs = [d for d in cfg.get("dbList", []) if d.startswith("tenant") and d != "tenant-base"][:2]
+    for db in dbs:
+        out = backup_dir / f"{db}.sql"
+        cmd = [
+            "docker", "run", "-i", "--rm", "--network", net,
+            "-e", f"PGPASSWORD={cfg.get('pass', '123')}",
+            "postgres:16", "pg_dump",
+            "-h", cfg.get("host", "postgres"),
+            "-p", str(cfg.get("port", "5432")),
+            "-U", cfg.get("user", "postgres"),
+            db,
+        ]
+        print(f"==> backupdb mock: {db} → {out}")
+        with out.open("w") as f:
+            subprocess.run(cmd, stdout=f, check=True)
+    print(f"==> 备份完成: {backup_dir}")
+
+
+def module_update_weather_pause(args: argparse.Namespace) -> None:
+    pause = env("WEATHER_PAUSE") or getattr(args, "weather_pause", None) or "False"
+    print(f"==> updateWeatherPause mock deployID={env('deployID')} weather_pause={pause}")
+
+
+def sql_dir_for_phase(phase: str) -> Path:
+    mock = SCRIPTS / "mock" / "upgrade"
+    if env("Env", "local") == "local" and phase in ("before", "after"):
+        return mock / ("1_before" if phase == "before" else "2_after")
+    if phase == "before":
+        return APPS_SRC / "upgrade" / "1_before"
+    if phase == "dbtools":
+        return APPS_SRC / "result" / "dbtools"
+    if phase == "after":
+        return APPS_SRC / "upgrade" / "2_after"
+    raise ValueError(f"unknown phase: {phase}")
+
+
+def module_do_sql_update(args: argparse.Namespace) -> None:
+    phase = env("SQL_PHASE", args.SqlPhase or "")
+    if not phase:
+        print("ERROR: 需要 --SqlPhase=before|dbtools|after", file=sys.stderr)
+        sys.exit(1)
+    sql_dir = sql_dir_for_phase(phase)
+    env_name = env("Env", "local")
+    db_file = db_config_file()
+    log_prefix = f"{env_name}_{phase}"
+    script = SCRIPTS / "do_sql_update.py"
+    run([
+        sys.executable, str(script),
+        str(sql_dir), str(WORKSPACE), log_prefix,
+        str(db_file), env_name, "TANANT",
+    ])
+
+
+def module_create_base_db(args: argparse.Namespace) -> None:
+    db_type = env("DB_TYPE", args.DbType or "tenant")
+    script = SCRIPTS / "create_base_db.py"
+    run([
+        sys.executable, str(script),
+        str(db_config_file()), env("Env", "local"),
+        str(APPS_SRC / "result"), db_type,
+    ])
+
+
 def module_docker_build(_: argparse.Namespace) -> None:
     reg = env("REGISTRY", "localhost:5050")
     name = env("IMAGE_NAME", "appx")
@@ -268,6 +345,12 @@ MODULES = {
     "build": module_build,
     "genUpgradeScript": module_gen_upgrade_script,
     "checkDbBuildtime": module_check_db_buildtime,
+    "initEnvDbs": module_init_env_dbs,
+    "restartSvc": module_restart_svc,
+    "backupdb": module_backupdb,
+    "updateWeatherPause": module_update_weather_pause,
+    "doSqlUpdate": module_do_sql_update,
+    "createBaseDb": module_create_base_db,
     "dockerBuild": module_docker_build,
     "dockerPush": module_docker_push,
     "deploy": module_deploy,
@@ -293,6 +376,11 @@ def main() -> None:
     parser.add_argument("--DbtoolsPath")
     parser.add_argument("--BUILD_DB_NAME")
     parser.add_argument("--CI_BUILD")
+    parser.add_argument("--SqlPhase")
+    parser.add_argument("--DbType")
+    parser.add_argument("--weather_pause")
+    parser.add_argument("--Svclist")
+    parser.add_argument("--Operate")
     args = parser.parse_args()
     for k, v in vars(args).items():
         if v is not None and k != "Module":

@@ -1,15 +1,15 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job">
   <actions/>
-  <description>appx CI：checkout apps/build→apps_src → build3.py → genUpgrade → 打镜像（对标 backend-appx-tx）</description>
+  <description>appx CI：apps/build→build3.py → genUpgrade → Tenant库三段升级 → 打镜像（对标 backend-appx-tx）</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>Branch</name>
-          <description>业务代码分支</description>
-          <defaultValue>main</defaultValue>
+          <description>apps/build 分支（77core-apps-build）</description>
+          <defaultValue>master</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>

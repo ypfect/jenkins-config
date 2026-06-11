@@ -6,7 +6,14 @@
     "pass": "123",
     "superDbUser": "postgres",
     "superDbPasswd": "123",
-    "dbList": ["tenant-base", "identity-base"],
-    "note": "mock getDbConfig；Pod 内构建库 key 由 insertDbinfo 动态插入"
+    "dbList": [
+      "tenant-demo1",
+      "tenant-demo2",
+      "tenant-public",
+      "tenant-base",
+      "identity",
+      "identity-base"
+    ],
+    "note": "mock 环境 PG；tenant-demo* 为待升级租户库，tenant-base 为 dbtools 比对基准"
   }
 }

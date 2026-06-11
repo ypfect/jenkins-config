@@ -66,7 +66,19 @@ workspace/appx-ci/
 | `cd apps_src && python3 build3.py -a appx` | 同命令；Nexus 不可用时 fallback 到 mock-modules |
 | `apps-build-pgv14` createdb testapp | compose `postgres` + `--Module=createdb` |
 | `genUpgradeScript` → `apps_src/result/dbtools/` | 同路径（本地 mock SQL） |
-| `apps-build-docker` dockerbuild | `--Module=dockerBuild` 读 `apps_src/result/` |
+| Stage10 `do_sql_update.py` ×3 + `create_base_db.py` | 本地简化脚本，对 compose postgres 上 tenant-demo* 三段升级 |
+| `apps-build-docker` dockerbuild | `--Module=dockerBuild` 读 `apps_src/result/`（**在打镜像 Stage 位于 DB 升级之后**） |
+
+**Stage 7–10（对标公司 CD 前半段，合并在 CI Job 内练习）：**
+
+| Stage | Module | 说明 |
+|-------|--------|------|
+| 停服务/备份 | `restartSvc` + `backupdb` | mock 停 appx + pg_dump 租户库 |
+| 开始 DB 操作 | `updateWeatherPause` | mock QiQiOps 天气暂停 |
+| Tenant 三段升级 | `doSqlUpdate` before → dbtools → after | `Env=local` 时 before/after 用 `scripts/mock/upgrade/` |
+| 基准库 | `createBaseDb --DbType=tenant` | 用 `apps_src/result/tenant.dump` 重建 `tenant-base` |
+
+检查阶段会先 `initEnvDbs` 创建 `tenant-demo1/2`、`tenant-public` 等 mock 环境库并灌 `deploy_marker` 种子表。
 
 ```bash
 cd practice && docker compose up -d postgres && ./register-jobs.sh appx

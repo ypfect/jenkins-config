@@ -47,6 +47,7 @@ pipeline {
           ${STEPS} --Module=checkTask --Env="\${DEPLOY_ENV}" --Branch="\${Branch}"
           ${STEPS} --Module=insertDbinfo --Env="\${DEPLOY_ENV}" --DBfiles="\${DBFILES}" \\
             --DBHost=postgres --DBPort=5432 --DBUser=postgres --DBPswd=123
+          ${STEPS} --Module=initEnvDbs --Env="\${DEPLOY_ENV}" --DBfiles="\${DBFILES}"
         """
       }
     }
@@ -79,7 +80,7 @@ pipeline {
           ${STEPS} --Module=prepareBuild
           ${STEPS} --Module=build
         """
-        stash includes: 'apps_src/result/**', name: 'artifacts'
+        stash includes: 'apps_src/**', name: 'artifacts'
       }
     }
 
@@ -99,6 +100,44 @@ pipeline {
       agent { label 'built-in' }
       steps {
         sh "${STEPS} --Module=checkDbBuildtime --Env=\"\${DEPLOY_ENV}\""
+      }
+    }
+
+    stage('停服务/备份数据库') {
+      agent { label 'built-in' }
+      steps {
+        unstash 'artifacts'
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" DBfiles="\${DBFILES}"
+          ${STEPS} --Module=callbackLog --log_info="停服务+备份（mock）"
+          ${STEPS} --Module=restartSvc --Env="\${DEPLOY_ENV}" --Svclist=appx --Operate=stop
+          ${STEPS} --Module=backupdb --Env="\${DEPLOY_ENV}" --DBfiles="\${DBFILES}"
+        """
+      }
+    }
+
+    stage('开始数据库操作') {
+      agent { label 'built-in' }
+      steps {
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}"
+          ${STEPS} --Module=updateWeatherPause --deployID="\${deployID}" --weather_pause=False
+        """
+      }
+    }
+
+    stage('Tenant库数据库升级/基准库创建') {
+      agent { label 'built-in' }
+      steps {
+        unstash 'artifacts'
+        sh """
+          export Env="\${DEPLOY_ENV}" deployID="\${deployID}" BUILD_NUMBER="\${BUILD_NUMBER}" DBfiles="\${DBFILES}"
+          ${STEPS} --Module=callbackLog --log_info="Tenant库三段式升级"
+          ${STEPS} --Module=doSqlUpdate --SqlPhase=before --DBfiles="\${DBFILES}"
+          ${STEPS} --Module=doSqlUpdate --SqlPhase=dbtools --DBfiles="\${DBFILES}"
+          ${STEPS} --Module=doSqlUpdate --SqlPhase=after --DBfiles="\${DBFILES}"
+          ${STEPS} --Module=createBaseDb --DbType=tenant --DBfiles="\${DBFILES}"
+        """
       }
     }
 
